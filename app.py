@@ -1,4 +1,5 @@
 import os
+from football_api import get_live_scores
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
@@ -33,6 +34,10 @@ def handle_message(event):
     
     # --- โซนตั้งเงื่อนไขการตอบ ---
     
+    # ในฟังก์ชัน handle_message
+    if "ผลบอล" in msg or "โปรแกรมบอล" in msg:
+        reply_text = get_live_scores()
+
     # 1. ถ้าพิมพ์คำว่า "ผลบอล" หรือ "สถิติ"
     if "ผลบอล" in msg or "สถิติ" in msg:
         reply_text = f"ได้รับคำสั่งหาข้อมูล: {msg} \n(เดี๋ยวผมไปดึงข้อมูลมาให้นะครับ - รอใส่โค้ดจริง)"
