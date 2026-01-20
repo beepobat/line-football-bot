@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 # ใส่ API Key ที่ได้จากอีเมลตรงนี้
-API_KEY = os.environ.get('FOOTBALL_DATA_API_KEY')  <-- ปิดบรรทัดนี้ไว้ก่อน
+API_KEY = os.environ.get('FOOTBALL_DATA_API_KEY')
 
 def get_live_scores():
     # URL สำหรับดูบอลที่เตะ "วันนี้"
