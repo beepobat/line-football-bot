@@ -1,58 +1,39 @@
-import os
-from flask import Flask, request, abort
-from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+# แก้ไขบรรทัด import ให้เรียกใช้ฟังก์ชันใหม่ด้วย
+from football_api import get_live_scores, get_last_5_matches, get_upcoming_matches
 
-# เพิ่มบรรทัดนี้: นำเข้าฟังก์ชันดึงผลบอลที่เราเพิ่งทำ
-from football_api import get_live_scores 
-
-app = Flask(__name__)
-
-# ดึง Key จาก Environment
-CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
-CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
-
-line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(CHANNEL_SECRET)
-
-@app.route("/callback", methods=['POST'])
-def callback():
-    signature = request.headers['X-Line-Signature']
-    body = request.get_data(as_text=True)
-    app.logger.info("Request body: " + body)
-
-    try:
-        handler.handle(body, signature)
-    except InvalidSignatureError:
-        abort(400)
-    return 'OK'
+# ... (ส่วนอื่นเหมือนเดิม) ...
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    msg = event.message.text.strip() # ตัดช่องว่างหน้าหลังออก
+    msg = event.message.text.strip()
+    words = msg.split()
     
-    # --- โซนตั้งค่าคำตอบ ---
-    
-    # 1. ถ้าพิมพ์คำว่า "ผลบอล" หรือ "โปรแกรมบอล"
-    if "ผลบอล" in msg or "โปรแกรมบอล" in msg:
-        # เรียกใช้ฟังก์ชันจากไฟล์ football_api.py (ของจริง)
-        reply_text = get_live_scores()
-    
-    # 2. ถ้าพิมพ์คำว่า "บอท" หรือ "น้อง"
-    elif "บอท" in msg or "น้อง" in msg:
-        reply_text = "ครับผม! มีอะไรให้ช่วยเรื่องบอลไหมครับ?"
+    # 1. ดูนัดล่วงหน้า (เช่น "โปรแกรม แมนยู", "นัดต่อไป ลิเวอร์พูล")
+    if len(words) >= 2 and (words[0] in ["โปรแกรม", "นัดต่อไป", "นัดหน้า"]):
+        team_name = words[1]
+        reply_text = get_upcoming_matches(team_name)
+
+    # 2. ดูผลย้อนหลัง (เช่น "ผลบอล แมนยู")
+    elif len(words) >= 2 and words[0] == "ผลบอล":
+        team_name = words[1]
+        reply_text = get_last_5_matches(team_name)
         
-    # 3. ถ้าพิมพ์คำอื่น (เช่น ทักทาย)
+    # 3. ดูผลบอลเมื่อวาน/พรุ่งนี้ (แบบระบุวัน)
+    elif "ผลบอลเมื่อวาน" in msg:
+        reply_text = get_live_scores(days_offset=-1)
+    elif "พรุ่งนี้" in msg:
+        reply_text = get_live_scores(days_offset=1)
+
+    # 4. ดูผลบอลวันนี้ (คำสั่งปกติ)
+    elif msg in ["ผลบอล", "โปรแกรมบอล", "เช็คผลบอล"]:
+        reply_text = get_live_scores(days_offset=0)
+        
+    elif "บอท" in msg:
+        reply_text = "สั่งได้เลยครับ:\n- 'ผลบอล' (ดูวันนี้)\n- 'ผลบอล แมนยู' (ดูย้อนหลัง 5 นัด)\n- 'โปรแกรม แมนยู' (ดู 3 นัดหน้า)"
     else:
-        # บอทจะไม่ตอบอะไร (หรือจะให้ตอบกวนๆ ก็แก้ตรงนี้ได้)
         return
 
-    # ส่งข้อความกลับไปหาผู้ใช้
     line_bot_api.reply_message(
         event.reply_token,
         TextSendMessage(text=reply_text)
     )
-
-if __name__ == "__main__":
-    app.run()
