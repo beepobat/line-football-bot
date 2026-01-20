@@ -164,14 +164,21 @@ def get_live_scores(days_offset=0):
             else: title = f"⚽ ผลบอลวันที่ {date_str} ⚽"
 
             reply_msg = f"{title}\n(เวลาไทย 🇹🇭)\n\n"
-            target_leagues = ['PL', 'PD', 'CL', 'BL1', 'SA', 'FL1']
+            
+            # รวมรหัสลีกและถ้วยทั้งหมดที่น่าสนใจ
+            target_leagues = [
+                'PL', 'PD', 'CL', 'BL1', 'SA', 'FL1', # ลีกหลัก
+                'FAC', 'FLC', 'CDR', 'DFB', 'CIT', 'CDF', # บอลถ้วยในประเทศ
+                'EL', 'CLI', 'WC', 'EC' # บอลถ้วยยุโรป/ทีมชาติ
+            ]
             
             found_match = False
             for match in matches:
                 league_code = match['competition']['code']
+                
+                # เช็คว่าอยู่ในลีก/ถ้วยที่เราสนใจไหม
                 if league_code in target_leagues:
                     found_match = True
-                    # แปลงเวลา
                     thai_time = convert_to_thai_time(match['utcDate'])
                     time_str = thai_time.strftime('%H:%M')
                     
@@ -179,14 +186,22 @@ def get_live_scores(days_offset=0):
                     away = match['awayTeam']['shortName']
                     status = match['status']
                     
+                    # ชื่อรายการแข่ง (เช่น UCL, FA Cup) - ใส่ให้รู้ว่าเป็นถ้วยอะไร
+                    comp_name = match['competition']['name']
+                    # ย่อชื่อถ้วยให้สั้นลงหน่อยจะได้ไม่รก
+                    comp_name = comp_name.replace("Premier League", "").replace("UEFA Champions League", "UCL").replace("FA Cup", "FA Cup") 
+                    
+                    if comp_name.strip(): comp_str = f" ({comp_name.strip()})"
+                    else: comp_str = ""
+
                     if status in ['FINISHED', 'LIVE', 'PAUSED']:
                         score_home = match['score']['fullTime']['home']
                         score_away = match['score']['fullTime']['away']
                         if score_home is None: score_home = 0
                         if score_away is None: score_away = 0
-                        reply_msg += f"⏰ {time_str} : {home} {score_home}-{score_away} {away} ({status})\n"
+                        reply_msg += f"⏰ {time_str} : {home} {score_home}-{score_away} {away} {status}{comp_str}\n"
                     else:
-                        reply_msg += f"⏰ {time_str} : {home} vs {away}\n"
+                        reply_msg += f"⏰ {time_str} : {home} vs {away}{comp_str}\n"
             
             if not found_match: return f"วันที่ {date_str} มีเตะครับ แต่เป็นลีกรองที่ไม่ได้ดึงมาโชว์"
             return reply_msg
