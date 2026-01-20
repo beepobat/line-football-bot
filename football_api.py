@@ -140,13 +140,19 @@ def get_live_scores(days_offset=0):
     url = "https://api.football-data.org/v4/matches"
     headers = {'X-Auth-Token': API_KEY}
     
-    target_date = datetime.now() + timedelta(days=days_offset)
-    date_str = target_date.strftime('%Y-%m-%d')
+    # 1. ตั้งเวลาหลัก (เวลาปัจจุบัน)
+    now = datetime.now()
+    target_date = now + timedelta(days=days_offset)
+    
+    # 2. เทคนิคพิเศษ: ดึงข้อมูลเผื่อไปเลย 2 วัน (วันนี้ + พรุ่งนี้)
+    # เพื่อให้มั่นใจว่าบอลเตะตี 1-3 จะติดมาด้วยแน่นอน
+    date_from = target_date.strftime('%Y-%m-%d')
+    date_to = (target_date + timedelta(days=1)).strftime('%Y-%m-%d')
     
     params = {
         'status': 'FINISHED,LIVE,PAUSED,SCHEDULED',
-        'dateFrom': date_str,
-        'dateTo': date_str
+        'dateFrom': date_from,
+        'dateTo': date_to # ดึงยาวไปถึงพรุ่งนี้
     }
     
     try:
@@ -155,55 +161,67 @@ def get_live_scores(days_offset=0):
             data = response.json()
             matches = data.get('matches', [])
             
-            if not matches:
-                return f"วันที่ {date_str} ไม่มีรายการแข่งในลีกหลักๆ ครับ"
+            # แปลงวันที่เป้าหมายเป็น Format วันที่ไทยเอาไว้เทียบ
+            # (ถ้า days_offset=0 คืออยากดูคืนนี้)
+            target_date_thai = convert_to_thai_time(datetime.strftime(target_date, "%Y-%m-%dT00:00:00Z")).date()
             
-            if days_offset == 0: title = "⚽ โปรแกรม/ผลบอล **วันนี้** ⚽"
-            elif days_offset == -1: title = f"⚽ ผลบอล **เมื่อวาน** ({date_str}) ⚽"
-            elif days_offset == 1: title = f"⚽ โปรแกรมบอล **พรุ่งนี้** ({date_str}) ⚽"
-            else: title = f"⚽ ผลบอลวันที่ {date_str} ⚽"
+            if days_offset == 0: title = "⚽ โปรแกรม/ผลบอล **คืนนี้** ⚽"
+            elif days_offset == -1: title = f"⚽ ผลบอล **เมื่อวาน** ⚽"
+            elif days_offset == 1: title = f"⚽ โปรแกรมบอล **พรุ่งนี้** ⚽"
+            else: title = f"⚽ ผลบอลวันที่ {date_from} ⚽"
 
-            reply_msg = f"{title}\n(เวลาไทย 🇹🇭)\n\n"
+            reply_msg = f"{title}\n(เวลาไทย 🇹🇭 รวมรอบดึก)\n\n"
             
-            # รวมรหัสลีกและถ้วยทั้งหมดที่น่าสนใจ
+            # รวมลีกและถ้วยทั้งหมด (เพิ่ม UCL=CL, ยูโรป้า=EL ให้แล้ว)
             target_leagues = [
-                'PL', 'PD', 'CL', 'BL1', 'SA', 'FL1', # ลีกหลัก
-                'FAC', 'FLC', 'CDR', 'DFB', 'CIT', 'CDF', # บอลถ้วยในประเทศ
-                'EL', 'CLI', 'WC', 'EC' # บอลถ้วยยุโรป/ทีมชาติ
+                'PL', 'PD', 'CL', 'BL1', 'SA', 'FL1', 
+                'FAC', 'FLC', 'CDR', 'DFB', 'CIT', 'CDF', 
+                'EL', 'CLI', 'WC', 'EC'
             ]
             
             found_match = False
             for match in matches:
                 league_code = match['competition']['code']
                 
-                # เช็คว่าอยู่ในลีก/ถ้วยที่เราสนใจไหม
                 if league_code in target_leagues:
-                    found_match = True
-                    thai_time = convert_to_thai_time(match['utcDate'])
-                    time_str = thai_time.strftime('%H:%M')
+                    # แปลงเป็นเวลาไทย
+                    thai_dt = convert_to_thai_time(match['utcDate'])
+                    match_date = thai_dt.date()
+                    match_hour = thai_dt.hour
                     
-                    home = match['homeTeam']['shortName']
-                    away = match['awayTeam']['shortName']
-                    status = match['status']
+                    # --- Logic คัดบอลรอบดึก ---
+                    # 1. ถ้าตรงกับวันที่เราเลือก (เช่น เตะ 2 ทุ่ม, 4 ทุ่ม) -> เอา!
+                    # 2. หรือ ถ้าเป็น "วันรุ่งขึ้น" แต่เตะก่อน 7 โมงเช้า (บอลรอบดึก) -> เอา!
+                    is_today_match = (match_date == target_date_thai)
+                    is_late_night_match = (match_date == target_date_thai + timedelta(days=1)) and (match_hour < 7)
                     
-                    # ชื่อรายการแข่ง (เช่น UCL, FA Cup) - ใส่ให้รู้ว่าเป็นถ้วยอะไร
-                    comp_name = match['competition']['name']
-                    # ย่อชื่อถ้วยให้สั้นลงหน่อยจะได้ไม่รก
-                    comp_name = comp_name.replace("Premier League", "").replace("UEFA Champions League", "UCL").replace("FA Cup", "FA Cup") 
-                    
-                    if comp_name.strip(): comp_str = f" ({comp_name.strip()})"
-                    else: comp_str = ""
+                    if is_today_match or is_late_night_match:
+                        found_match = True
+                        time_str = thai_dt.strftime('%H:%M')
+                        
+                        home = match['homeTeam']['shortName']
+                        away = match['awayTeam']['shortName']
+                        status = match['status']
+                        comp_name = match['competition']['name']
+                        
+                        # ย่อชื่อลีก/ถ้วย ให้สั้นกระชับ
+                        comp_name = comp_name.replace("Premier League", "").replace("UEFA Champions League", "UCL").replace("Europa League", "UEL").strip()
+                        comp_str = f" ({comp_name})" if comp_name else ""
 
-                    if status in ['FINISHED', 'LIVE', 'PAUSED']:
-                        score_home = match['score']['fullTime']['home']
-                        score_away = match['score']['fullTime']['away']
-                        if score_home is None: score_home = 0
-                        if score_away is None: score_away = 0
-                        reply_msg += f"⏰ {time_str} : {home} {score_home}-{score_away} {away} {status}{comp_str}\n"
-                    else:
-                        reply_msg += f"⏰ {time_str} : {home} vs {away}{comp_str}\n"
+                        # ตกแต่งสกอร์
+                        if status in ['FINISHED', 'LIVE', 'PAUSED']:
+                            score_home = match['score']['fullTime']['home']
+                            score_away = match['score']['fullTime']['away']
+                            if score_home is None: score_home = 0
+                            if score_away is None: score_away = 0
+                            
+                            # ถ้าบอลสด ใส่สัญลักษณ์ 🔴
+                            live_icon = "🔴 " if status == 'LIVE' else ""
+                            reply_msg += f"{live_icon}⏰ {time_str} : {home} {score_home}-{score_away} {away} {status}{comp_str}\n"
+                        else:
+                            reply_msg += f"⏰ {time_str} : {home} vs {away}{comp_str}\n"
             
-            if not found_match: return f"วันที่ {date_str} มีเตะครับ แต่เป็นลีกรองที่ไม่ได้ดึงมาโชว์"
+            if not found_match: return f"วันที่ {date_from} ไม่มีรายการแข่งในลีกหลักๆ ครับ"
             return reply_msg
         else:
             return f"เชื่อมต่อ API ไม่ได้ (Code: {response.status_code})"
