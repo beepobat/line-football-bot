@@ -22,7 +22,7 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY') # เดี๋ยวไปใ�
 genai.configure(api_key=GEMINI_API_KEY)
 
 # สร้างโมเดล และกำหนดนิสัย (Persona)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 def ask_gemini(user_text):
     try:
