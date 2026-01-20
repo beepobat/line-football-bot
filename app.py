@@ -23,7 +23,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # ใช้โมเดลที่คุณเลือก (ถ้า 2.5 ใช้ได้ก็จัดไปครับ หรือจะใช้ 1.5-flash ก็ได้)
 # ในโค้ดนี้ผมใส่เป็นตัวแปรไว้ให้ ถ้าอยากเปลี่ยนรุ่นก็แก้ตรง string นี้ได้เลย
-model = genai.GenerativeModel('gemini-1.5-flash') 
+model = genai.GenerativeModel('models/gemini-2.5-flash') 
 
 def ask_gemini(user_text):
     try:
