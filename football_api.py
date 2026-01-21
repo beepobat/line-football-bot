@@ -145,14 +145,14 @@ def get_live_scores(days_offset=0):
     target_date = now + timedelta(days=days_offset)
     
     # 2. เทคนิคพิเศษ: ดึงข้อมูลเผื่อไปเลย 2 วัน (วันนี้ + พรุ่งนี้)
-    # เพื่อให้มั่นใจว่าบอลเตะตี 1-3 จะติดมาด้วยแน่นอน
     date_from = target_date.strftime('%Y-%m-%d')
     date_to = (target_date + timedelta(days=1)).strftime('%Y-%m-%d')
     
+    # [แก้ไข 1] เพิ่ม IN_PLAY เข้าไปใน status เพื่อดึงบอลสดที่กำลังเตะแน่นอน
     params = {
-        'status': 'FINISHED,LIVE,PAUSED,SCHEDULED',
+        'status': 'FINISHED,LIVE,PAUSED,SCHEDULED,IN_PLAY', 
         'dateFrom': date_from,
-        'dateTo': date_to # ดึงยาวไปถึงพรุ่งนี้
+        'dateTo': date_to
     }
     
     try:
@@ -161,8 +161,6 @@ def get_live_scores(days_offset=0):
             data = response.json()
             matches = data.get('matches', [])
             
-            # แปลงวันที่เป้าหมายเป็น Format วันที่ไทยเอาไว้เทียบ
-            # (ถ้า days_offset=0 คืออยากดูคืนนี้)
             target_date_thai = convert_to_thai_time(datetime.strftime(target_date, "%Y-%m-%dT00:00:00Z")).date()
             
             if days_offset == 0: title = "⚽ โปรแกรม/ผลบอล **คืนนี้** ⚽"
@@ -172,7 +170,6 @@ def get_live_scores(days_offset=0):
 
             reply_msg = f"{title}\n(เวลาไทย 🇹🇭 รวมรอบดึก)\n\n"
             
-            # รวมลีกและถ้วยทั้งหมด (เพิ่ม UCL=CL, ยูโรป้า=EL ให้แล้ว)
             target_leagues = [
                 'PL', 'PD', 'CL', 'BL1', 'SA', 'FL1', 
                 'FAC', 'FLC', 'CDR', 'DFB', 'CIT', 'CDF', 
@@ -184,14 +181,10 @@ def get_live_scores(days_offset=0):
                 league_code = match['competition']['code']
                 
                 if league_code in target_leagues:
-                    # แปลงเป็นเวลาไทย
                     thai_dt = convert_to_thai_time(match['utcDate'])
                     match_date = thai_dt.date()
                     match_hour = thai_dt.hour
                     
-                    # --- Logic คัดบอลรอบดึก ---
-                    # 1. ถ้าตรงกับวันที่เราเลือก (เช่น เตะ 2 ทุ่ม, 4 ทุ่ม) -> เอา!
-                    # 2. หรือ ถ้าเป็น "วันรุ่งขึ้น" แต่เตะก่อน 7 โมงเช้า (บอลรอบดึก) -> เอา!
                     is_today_match = (match_date == target_date_thai)
                     is_late_night_match = (match_date == target_date_thai + timedelta(days=1)) and (match_hour < 7)
                     
@@ -204,21 +197,27 @@ def get_live_scores(days_offset=0):
                         status = match['status']
                         comp_name = match['competition']['name']
                         
-                        # ย่อชื่อลีก/ถ้วย ให้สั้นกระชับ
                         comp_name = comp_name.replace("Premier League", "").replace("UEFA Champions League", "UCL").replace("Europa League", "UEL").strip()
                         comp_str = f" ({comp_name})" if comp_name else ""
 
-                        # ตกแต่งสกอร์
-                        if status in ['FINISHED', 'LIVE', 'PAUSED']:
+                        # [แก้ไข 2] เพิ่ม IN_PLAY เข้าไปในเงื่อนไข เพื่อให้โชว์สกอร์ตอนแข่งอยู่
+                        if status in ['FINISHED', 'LIVE', 'PAUSED', 'IN_PLAY']:
                             score_home = match['score']['fullTime']['home']
                             score_away = match['score']['fullTime']['away']
+                            
+                            # บางทีบอลสด สกอร์ fullTime อาจจะเป็น None ให้แก้เป็น 0
                             if score_home is None: score_home = 0
                             if score_away is None: score_away = 0
                             
-                            # ถ้าบอลสด ใส่สัญลักษณ์ 🔴
-                            live_icon = "🔴 " if status == 'LIVE' else ""
-                            reply_msg += f"{live_icon}⏰ {time_str} : {home} {score_home}-{score_away} {away} {status}{comp_str}\n"
+                            # [แก้ไข 3] ใส่สัญลักษณ์ 🔴 ถ้าสถานะเป็น LIVE หรือ IN_PLAY
+                            live_icon = "🔴 " if status in ['LIVE', 'IN_PLAY'] else ""
+                            
+                            # [เสริม] ถ้าพักครึ่ง (PAUSED) ให้บอกด้วย
+                            if status == 'PAUSED': live_icon = "⏸️ (พักครึ่ง) "
+
+                            reply_msg += f"{live_icon}⏰ {time_str} : {home} {score_home}-{score_away} {away} {comp_str}\n"
                         else:
+                            # พวก SCHEDULED
                             reply_msg += f"⏰ {time_str} : {home} vs {away}{comp_str}\n"
             
             if not found_match: return f"วันที่ {date_from} ไม่มีรายการแข่งในลีกหลักๆ ครับ"
@@ -227,44 +226,6 @@ def get_live_scores(days_offset=0):
             return f"เชื่อมต่อ API ไม่ได้ (Code: {response.status_code})"
     except Exception as e:
         return f"เกิดข้อผิดพลาด: {e}"
-
-# --- ฟังก์ชัน 2: ดูผลย้อนหลัง 5 นัด ---
-def get_last_5_matches(team_name):
-    team_id = TEAM_MAPPING.get(team_name.lower())
-    if not team_id: return f"ไม่พบทีม '{team_name}' ในระบบครับ"
-
-    url = f"https://api.football-data.org/v4/teams/{team_id}/matches"
-    headers = {'X-Auth-Token': API_KEY}
-    params = {'status': 'FINISHED', 'limit': 50}
-
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        matches = response.json().get('matches', [])
-        if not matches: return "ไม่พบข้อมูลย้อนหลังครับ"
-        
-        last_5 = matches[::-1][:5]
-        reply_msg = f"📊 **ผล 5 นัดหลังสุด: {team_name}** 📊\n\n"
-        
-        for match in last_5:
-            thai_time = convert_to_thai_time(match['utcDate'])
-            date_str = thai_time.strftime('%d/%m')
-            
-            home = match['homeTeam']['shortName']
-            away = match['awayTeam']['shortName']
-            score_h = match['score']['fullTime']['home']
-            score_a = match['score']['fullTime']['away']
-            
-            is_home = (match['homeTeam']['id'] == team_id)
-            my_score = score_h if is_home else score_a
-            opp_score = score_a if is_home else score_h
-            
-            if my_score > opp_score: icon = "✅"
-            elif my_score < opp_score: icon = "❌"
-            else: icon = "➖"
-            
-            reply_msg += f"{icon} {date_str}: {home} {score_h}-{score_a} {away}\n"
-        return reply_msg
-    except Exception as e: return f"Error: {e}"
 
 # --- ฟังก์ชัน 3: ดูโปรแกรมล่วงหน้า 3 นัด (เวลาไทย) ---
 def get_upcoming_matches(team_name):
