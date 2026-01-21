@@ -227,6 +227,44 @@ def get_live_scores(days_offset=0):
     except Exception as e:
         return f"เกิดข้อผิดพลาด: {e}"
 
+# --- ฟังก์ชัน 2: ดูผลย้อนหลัง 5 นัด ---
+def get_last_5_matches(team_name):
+    team_id = TEAM_MAPPING.get(team_name.lower())
+    if not team_id: return f"ไม่พบทีม '{team_name}' ในระบบครับ"
+
+    url = f"https://api.football-data.org/v4/teams/{team_id}/matches"
+    headers = {'X-Auth-Token': API_KEY}
+    params = {'status': 'FINISHED', 'limit': 50}
+
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        matches = response.json().get('matches', [])
+        if not matches: return "ไม่พบข้อมูลย้อนหลังครับ"
+        
+        last_5 = matches[::-1][:5]
+        reply_msg = f"📊 **ผล 5 นัดหลังสุด: {team_name}** 📊\n\n"
+        
+        for match in last_5:
+            thai_time = convert_to_thai_time(match['utcDate'])
+            date_str = thai_time.strftime('%d/%m')
+            
+            home = match['homeTeam']['shortName']
+            away = match['awayTeam']['shortName']
+            score_h = match['score']['fullTime']['home']
+            score_a = match['score']['fullTime']['away']
+            
+            is_home = (match['homeTeam']['id'] == team_id)
+            my_score = score_h if is_home else score_a
+            opp_score = score_a if is_home else score_h
+            
+            if my_score > opp_score: icon = "✅"
+            elif my_score < opp_score: icon = "❌"
+            else: icon = "➖"
+            
+            reply_msg += f"{icon} {date_str}: {home} {score_h}-{score_a} {away}\n"
+        return reply_msg
+    except Exception as e: return f"Error: {e}"
+
 # --- ฟังก์ชัน 3: ดูโปรแกรมล่วงหน้า 3 นัด (เวลาไทย) ---
 def get_upcoming_matches(team_name):
     team_id = TEAM_MAPPING.get(team_name.lower())
