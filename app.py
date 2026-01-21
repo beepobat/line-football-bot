@@ -5,28 +5,27 @@ from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 
-# นำเข้าฟังก์ชันฟุตบอล (ต้องมีไฟล์ football_api.py อยู่โฟลเดอร์เดียวกัน)
+# นำเข้าฟังก์ชันฟุตบอล (ชื่อฟังก์ชันต้องตรงกับใน football_api.py เป๊ะๆ)
 from football_api import get_live_scores, get_last_5_matches, get_upcoming_matches, get_standings
 
 app = Flask(__name__)
 
-# --- ตั้งค่า LINE (ดึงจาก Render Environment) ---
+# --- ตั้งค่า LINE ---
 CHANNEL_ACCESS_TOKEN = os.environ.get('LINE_CHANNEL_ACCESS_TOKEN')
 CHANNEL_SECRET = os.environ.get('LINE_CHANNEL_SECRET')
 
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# --- ตั้งค่า AI (ดึงจาก Render Environment) ---
+# --- ตั้งค่า AI ---
 GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
 genai.configure(api_key=GEMINI_API_KEY)
 
-# ใช้โมเดล Gemini 1.5 Flash (เร็วและประหยัด)
 model = genai.GenerativeModel('gemini-1.5-flash') 
 
 def ask_gemini(user_text):
     try:
-        # --- ปรับจูน Prompt: จารย์เซียน ปากแซ่บ ---
+        # Prompt: จารย์เซียน ปากแซ่บ
         system_prompt = """
         คุณคือ 'จารย์เซียน' กูรูฟุตบอลปากจัด แฟนบอลตัวยงที่วิเคราะห์เกมขาดเหมือนโค้ชมาเอง
         
@@ -42,11 +41,8 @@ def ask_gemini(user_text):
 
         บริบท: ตอนนี้คุณคุยอยู่ใน LINE Group กับแก๊งเพื่อนดูบอล
         """
-        
-        # ส่ง Prompt + คำถาม User ไปให้ AI
         response = model.generate_content(f"{system_prompt}\n\nUser ถามว่า: {user_text}")
         return response.text.strip()
-        
     except Exception as e:
         print(f"Gemini Error: {e}")
         return "โทษที ไวไฟที่ร้านเหล้าไม่ค่อยดี สมองเบลอชั่วคราว (AI Error)"
@@ -69,7 +65,7 @@ def handle_message(event):
     
     reply_text = ""
 
-    # --- โซน 1: คำสั่งฟุตบอล (ทำงานทันที) ---
+    # โซน 1: คำสั่งฟุตบอล
     if len(words) >= 2 and (words[0] in ["ตาราง", "คะแนน", "อันดับ"]):
         reply_text = get_standings(words[1])
     elif len(words) >= 2 and (words[0] in ["โปรแกรม", "นัดต่อไป", "นัดหน้า", "โปรแกรมบอล"]):
@@ -83,16 +79,13 @@ def handle_message(event):
     elif "พรุ่งนี้" in msg and ("ผลบอล" in msg or "โปรแกรม" in msg):
         reply_text = get_live_scores(days_offset=1)
     
-    # --- โซน 2: คุยกับ AI (ต้องเรียกชื่อ) ---
+    # โซน 2: คุยกับ AI
     elif any(x in msg_lower for x in ["บอท", "น้อง", "bot", "@", "จารย์"]):
-        # ลบคำเรียกชื่อออก เพื่อให้ AI ได้เนื้อหาจริงๆ
         clean_msg = msg
         for prefix in ["บอท", "น้อง", "bot", "@", "จารย์"]:
             clean_msg = clean_msg.replace(prefix, "")
-        
         reply_text = ask_gemini(clean_msg)
 
-    # --- โซน 3: ถ้ามีคำตอบ ค่อยส่งกลับ ---
     if reply_text:
         line_bot_api.reply_message(
             event.reply_token,
