@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 # ดึง Key จาก Environment
 API_KEY = os.environ.get('FOOTBALL_DATA_API_KEY')
 
-# --- 1. สมุดจดชื่อลีก ---
+# --- 1. สมุดจดชื่อลีก (สำหรับเรียกดูตารางคะแนน) ---
 LEAGUE_MAPPING = {
     'พรีเมียร์': 'PL', 'พรีเมียร์ลีก': 'PL', 'อังกฤษ': 'PL', 'pl': 'PL',
     'ลาลีกา': 'PD', 'สเปน': 'PD', 'pd': 'PD',
@@ -15,7 +15,7 @@ LEAGUE_MAPPING = {
     'ลีกเอิง': 'FL1', 'ฝรั่งเศส': 'FL1', 'fl1': 'FL1'
 }
 
-# --- 2. สมุดจดชื่อเล่นทีม ---
+# --- 2. สมุดจดชื่อเล่นทีม (ฉบับสมบูรณ์ ครบ 5 ลีก + ทีมเล็ก + ทีมเลื่อนชั้น) ---
 TEAM_MAPPING = {
     # 🏴󠁧󠁢󠁥󠁮󠁧󠁿 พรีเมียร์ลีก
     'แมนยู': 66, 'ผีแดง': 66, 'manutd': 66, 'mu': 66,
@@ -47,7 +47,7 @@ TEAM_MAPPING = {
     'บาเลนเซีย': 95, 'valencia': 95,
     'บียาร์เรอัล': 94, 'villarreal': 94,
     'โซเซียดาด': 92, 'sociedad': 92,
-    'บิลเบา': 77, 'athletic': 77,
+    'บิลเบา': 77, 'athletic': 77, 'athleticclub': 77,
     'เอสปันญ่อล': 80, 'espanyol': 80,
     'เลกาเนส': 745, 'leganes': 745,
     'บายาโดลิด': 250, 'valladolid': 250,
@@ -71,7 +71,7 @@ TEAM_MAPPING = {
     'กลัดบัค': 18, 'gladbach': 18,
     'ออกสบวร์ก': 16, 'augsburg': 16,
     'ซังต์เพาลี': 35, 'stpauli': 35,
-    'โฮลสไตน์คีล': 720, 'holsteinkiel': 720,
+    'โฮลสไตน์คีล': 720, 'holsteinkiel': 720, 'kiel': 720,
     'สตุ๊ตการ์ท': 10, 'stuttgart': 10,
     'ไฟร์บวร์ก': 17, 'freiburg': 17,
     'ฮอฟเฟนไฮม์': 2, 'hoffenheim': 2,
@@ -135,20 +135,20 @@ def convert_to_thai_time(utc_date_str):
     except:
         return datetime.now()
 
-# --- ฟังก์ชัน 1: ดูผลบอลรายวัน (มีบอลสด) ---
+# --- ฟังก์ชัน 1: ดูผลบอลรายวัน (เวลาไทย) ---
 def get_live_scores(days_offset=0):
     url = "https://api.football-data.org/v4/matches"
     headers = {'X-Auth-Token': API_KEY}
     
-    # 1. ตั้งเวลาหลัก
+    # 1. ตั้งเวลาหลัก (เวลาปัจจุบัน)
     now = datetime.now()
     target_date = now + timedelta(days=days_offset)
     
-    # 2. ดึงข้อมูลเผื่อ 2 วัน
+    # 2. เทคนิคพิเศษ: ดึงข้อมูลเผื่อไปเลย 2 วัน (วันนี้ + พรุ่งนี้)
     date_from = target_date.strftime('%Y-%m-%d')
     date_to = (target_date + timedelta(days=1)).strftime('%Y-%m-%d')
     
-    # [สำคัญ] เพิ่ม IN_PLAY เพื่อดึงบอลสด
+    # [แก้ไข 1] เพิ่ม IN_PLAY เข้าไปใน status เพื่อดึงบอลสดที่กำลังเตะแน่นอน
     params = {
         'status': 'FINISHED,LIVE,PAUSED,SCHEDULED,IN_PLAY', 
         'dateFrom': date_from,
@@ -200,19 +200,24 @@ def get_live_scores(days_offset=0):
                         comp_name = comp_name.replace("Premier League", "").replace("UEFA Champions League", "UCL").replace("Europa League", "UEL").strip()
                         comp_str = f" ({comp_name})" if comp_name else ""
 
-                        # เช็คสถานะบอลแข่งอยู่
+                        # [แก้ไข 2] เพิ่ม IN_PLAY เข้าไปในเงื่อนไข เพื่อให้โชว์สกอร์ตอนแข่งอยู่
                         if status in ['FINISHED', 'LIVE', 'PAUSED', 'IN_PLAY']:
                             score_home = match['score']['fullTime']['home']
                             score_away = match['score']['fullTime']['away']
                             
+                            # บางทีบอลสด สกอร์ fullTime อาจจะเป็น None ให้แก้เป็น 0
                             if score_home is None: score_home = 0
                             if score_away is None: score_away = 0
                             
+                            # [แก้ไข 3] ใส่สัญลักษณ์ 🔴 ถ้าสถานะเป็น LIVE หรือ IN_PLAY
                             live_icon = "🔴 " if status in ['LIVE', 'IN_PLAY'] else ""
+                            
+                            # [เสริม] ถ้าพักครึ่ง (PAUSED) ให้บอกด้วย
                             if status == 'PAUSED': live_icon = "⏸️ (พักครึ่ง) "
 
                             reply_msg += f"{live_icon}⏰ {time_str} : {home} {score_home}-{score_away} {away} {comp_str}\n"
                         else:
+                            # พวก SCHEDULED
                             reply_msg += f"⏰ {time_str} : {home} vs {away}{comp_str}\n"
             
             if not found_match: return f"วันที่ {date_from} ไม่มีรายการแข่งในลีกหลักๆ ครับ"
@@ -222,45 +227,7 @@ def get_live_scores(days_offset=0):
     except Exception as e:
         return f"เกิดข้อผิดพลาด: {e}"
 
-# --- ฟังก์ชัน 2: ดูผลย้อนหลัง 5 นัด (ตัวต้นเหตุ Error ต้องมีตัวนี้!) ---
-def get_last_5_matches(team_name):
-    team_id = TEAM_MAPPING.get(team_name.lower())
-    if not team_id: return f"ไม่พบทีม '{team_name}' ในระบบครับ"
-
-    url = f"https://api.football-data.org/v4/teams/{team_id}/matches"
-    headers = {'X-Auth-Token': API_KEY}
-    params = {'status': 'FINISHED', 'limit': 50}
-
-    try:
-        response = requests.get(url, headers=headers, params=params)
-        matches = response.json().get('matches', [])
-        if not matches: return "ไม่พบข้อมูลย้อนหลังครับ"
-        
-        last_5 = matches[::-1][:5]
-        reply_msg = f"📊 **ผล 5 นัดหลังสุด: {team_name}** 📊\n\n"
-        
-        for match in last_5:
-            thai_time = convert_to_thai_time(match['utcDate'])
-            date_str = thai_time.strftime('%d/%m')
-            
-            home = match['homeTeam']['shortName']
-            away = match['awayTeam']['shortName']
-            score_h = match['score']['fullTime']['home']
-            score_a = match['score']['fullTime']['away']
-            
-            is_home = (match['homeTeam']['id'] == team_id)
-            my_score = score_h if is_home else score_a
-            opp_score = score_a if is_home else score_h
-            
-            if my_score > opp_score: icon = "✅"
-            elif my_score < opp_score: icon = "❌"
-            else: icon = "➖"
-            
-            reply_msg += f"{icon} {date_str}: {home} {score_h}-{score_a} {away}\n"
-        return reply_msg
-    except Exception as e: return f"Error: {e}"
-
-# --- ฟังก์ชัน 3: ดูโปรแกรมล่วงหน้า 3 นัด ---
+# --- ฟังก์ชัน 3: ดูโปรแกรมล่วงหน้า 3 นัด (เวลาไทย) ---
 def get_upcoming_matches(team_name):
     team_id = TEAM_MAPPING.get(team_name.lower())
     if not team_id: return f"ไม่พบทีม '{team_name}' ในระบบครับ"
